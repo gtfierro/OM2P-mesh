@@ -1,0 +1,272 @@
+Index: Makefile
+===================================================================
+--- Makefile	(revision 290)
++++ Makefile	(working copy)
+@@ -59,6 +59,7 @@
+ 	PLATFORM = WIN32
+ else ifeq ($(MAKECMDGOALS),$(BINARY_NAME)-osx)
+ 	PLATFORM = OSX
++	LDFLAGS += -lpcap
+ endif
+ 
+ ifneq ($(EMBED_CI)$(EMBED_CE)$(EMBED_UBNT)$(EMBED_UBOOT),)
+@@ -105,7 +106,8 @@
+ endif
+ 
+ CMDLINE_O = $(AP51_O) commandline.o
+-CFLAGS += -Wall -Werror -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
++#CFLAGS += -Wall -Werror -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
++CFLAGS += -Wall -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
+ 
+ NUM_CPUS = $(shell nproc 2> /dev/null || echo 1)
+ REVISION= $(shell	if [ -d .svn ]; then \
+Index: missing-osx.h
+===================================================================
+--- missing-osx.h	(revision 252)
++++ missing-osx.h	(working copy)
+@@ -27,7 +27,30 @@
+ #define ETH_P_IP       0x0800          /* Internet Protocol packet     */
+ #define ICMP_DEST_UNREACH  3
+ #define IPPORT_TFTP 69
++typedef unsigned char u_int8_t;
++typedef unsigned short u_int16_t;
++typedef unsigned int u_int32_t;
+ 
++struct tcphdr {
++	uint16_t source;
++	uint16_t dest;
++	uint32_t seq;
++	uint32_t ack_seq;
++	uint16_t res1:4,
++		 doff:4,
++		 fin:1,
++		 syn:1,
++		 rst:1,
++		 psh:1,
++		 ack:1,
++		 urg:1,
++		 ece:1,
++		 cwr:1;
++	uint16_t window;
++	uint16_t check;
++	uint16_t urg_ptr;
++};
++
+ struct iphdr {
+ 	unsigned int ihl:4;
+ 	unsigned int version:4;
+@@ -49,4 +72,28 @@
+ 	u_int16_t check;
+ };
+ 
++struct ether_header {
++	u_int8_t  ether_dhost[ETH_ALEN];	/* destination eth addr	*/
++	u_int8_t  ether_shost[ETH_ALEN];	/* source ether addr	*/
++	u_int16_t ether_type;		        /* packet type ID field	*/
++};
++
++struct arphdr {
++	unsigned short	ar_hrd;		/* format of hardware address	*/
++	unsigned short	ar_pro;		/* format of protocol address	*/
++	unsigned char	ar_hln;		/* length of hardware address	*/
++	unsigned char	ar_pln;		/* length of protocol address	*/
++	unsigned short	ar_op;		/* ARP opcode (command)		*/
++
++};
++
++struct ether_arp {
++	struct  arphdr ea_hdr;          /* fixed-size header */
++	u_int8_t arp_sha[ETH_ALEN];     /* sender hardware address */
++	u_int8_t arp_spa[4];            /* sender protocol address */
++	u_int8_t arp_tha[ETH_ALEN];     /* target hardware address */
++	u_int8_t arp_tpa[4];            /* target protocol address */
++};
++
++
+ #endif /* __MISSING_OSX_H__ */
+Index: proto.c
+===================================================================
+--- proto.c	(revision 290)
++++ proto.c	(working copy)
+@@ -43,6 +43,20 @@
+ #define ARP_LEN (sizeof(struct ether_header) + sizeof(struct ether_arp))
+ #define MAX_TCP_PAYLOAD (ETH_DATA_LEN - ETH_HLEN - sizeof(struct iphdr) - sizeof(struct tcphdr))
+ 
++#define ETH_ALEN 6
++#define ETH_HLEN 14
++#define ETH_P_ARP       0x0806
++#define ETHERTYPE_ARP 0x0806
++#define ARPOP_REQUEST 1
++#define ARPOP_REPLY   2
++#define ETH_P_IP       0x0800          /* Internet Protocol packet     */
++#define ICMP_DEST_UNREACH  3
++#define IPPORT_TFTP 69
++#define IPPROTO_UDP 17
++#define IPPROTO_TCP 6
++#define ETH_DATA_LEN 1500
++
++
+ static char *out_packet_buff;
+ static struct ether_header *out_ethhdr;
+ static struct ether_arp *out_arphdr;
+Index: socket.c
+===================================================================
+--- socket.c	(revision 290)
++++ socket.c	(working copy)
+@@ -19,6 +19,8 @@
+ #include <errno.h>
+ #include <stdio.h>
+ #include <string.h>
++#include <stdlib.h>
++#include <pcap.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+ #include <fcntl.h>
+@@ -27,6 +29,7 @@
+ #include "socket.h"
+ #include "flash.h"
+ 
++pcap_t *pcap_fp = NULL;
+ #if defined(LINUX)
+ #define BUFF_LEN 8192
+ 
+@@ -114,6 +117,32 @@
+ 
+ char *socket_find_iface_by_index(char *iface_number)
+ {
++#if defined(OSX)
++	pcap_if_t *alldevs = NULL, *d;
++	char errbuf[PCAP_ERRBUF_SIZE], *pcap_dev = NULL;
++	int i = 0, if_num = 0;
++
++	if_num = strtol(iface_number, NULL, 10);
++
++	if (pcap_findalldevs(&alldevs, errbuf) == -1)
++		alldevs = NULL;
++
++	/* Print the list */
++	for (d = alldevs; d != NULL; d = d->next) {
++		i++;
++
++		if (if_num == i) {
++			pcap_dev = strdup(d->name);
++			break;
++		}
++	}
++
++	if (alldevs)
++		pcap_freealldevs(alldevs);
++
++	return pcap_dev;
++
++#endif
+ #if defined(LINUX)
+ 	struct ifinfomsg *ifinfomsg;
+ 	struct nlmsghdr *nh;
+@@ -189,9 +218,6 @@
+ 		pcap_freealldevs(alldevs);
+ out:
+ 	return iface;
+-#else
+-#error socket_find_dev_by_index() is not supported on your OS
+-	return NULL;
+ #endif
+ }
+ 
+@@ -273,6 +299,39 @@
+ 		pcap_freealldevs(alldevs);
+ out:
+ 	return;
++#elif defined(OSX)
++	pcap_if_t *alldevs = NULL, *d;
++	char errbuf[PCAP_ERRBUF_SIZE];
++	int i = 0;
++
++	/* Retrieve the device list from the local machine */
++	if (pcap_findalldevs(&alldevs, errbuf) == -1) {
++		fprintf(stderr, "Error in pcap_findalldevs: %s\n", errbuf);
++		return;
++	}
++
++	/* Print the list */
++	for(d = alldevs; d != NULL; d = d->next) {
++		i++;
++		fprintf(stderr, "\n%i: %s\n", i, d->name);
++
++		if (!d->description) {
++			fprintf(stderr, "\t(No description available)\n");
++			continue;
++		}
++
++		unsigned char* p = (unsigned char*)d->description;
++		unsigned char c = 0;
++		fprintf(stderr, "\t(Description: ");
++		while (' ' <= *p) {
++			if (c != ' ' || c != *p)
++				fprintf(stderr, "%c", *p);
++			c = *p++;
++		}
++
++		fprintf(stderr, ")\n");
++	}
++
+ #else
+ #error socket_print_all_devices() is not supported on your OS
+ #endif
+@@ -367,6 +426,17 @@
+ 	}
+ 
+ 	return 0;
++#elif defined(OSX)
++	char error[PCAP_ERRBUF_SIZE];
++
++	/* Open the output adapter */
++	pcap_fp = pcap_open_live(iface, 1500, 1, 250, error);
++	if (!pcap_fp) {
++		fprintf(stderr, "Error opening adapter: %s\n", error);
++		return 1;
++	}
++
++	return 0;
+ #else
+ #error socket_open() is not supported on your OS
+ 	return -1;
+@@ -425,7 +495,7 @@
+ 
+ out:
+ 	return ret;
+-#elif defined(WIN32)
++#elif defined(OSX)
+ 	struct pcap_pkthdr hdr;
+ 	const unsigned char *tmp_packet;
+ 	int ret = -1;
+@@ -470,7 +540,7 @@
+ 
+ out:
+ 	return ret;
+-#elif defined(WIN32)
++#elif defined(OSX)
+ 	int ret = -1;
+ 
+ 	if (!pcap_fp) {
+@@ -525,7 +595,7 @@
+ 	raw_sock = -1;
+ out:
+ 	return;
+-#elif defined(WIN32)
++#elif defined(OSX)
+ 	if (!pcap_fp) {
+ 		fprintf(stderr, "Error closing adapter '%s': pcap socket not initialized yet\n", iface);
+ 		goto out;
+Index: types.h
+===================================================================
+--- types.h	(revision 290)
++++ types.h	(working copy)
+@@ -20,6 +20,7 @@
+ #define _AP51_FLASH_TYPES_H_
+ 
+ #include <stdint.h>
++#include "missing-osx.h"
+ 
+ #define NODE_STATUS_UNKNOWN	0x00
+ #define NODE_STATUS_DETECTING	0x01

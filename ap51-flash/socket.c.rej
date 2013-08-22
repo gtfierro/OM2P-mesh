@@ -1,0 +1,217 @@
+***************
+*** 19,24 ****
+  #include <errno.h>
+  #include <stdio.h>
+  #include <string.h>
+  #include <unistd.h>
+  #include <stdlib.h>
+  #include <fcntl.h>
+--- 19,26 ----
+  #include <errno.h>
+  #include <stdio.h>
+  #include <string.h>
++ #include <stdlib.h>
++ #include <pcap.h>
+  #include <unistd.h>
+  #include <stdlib.h>
+  #include <fcntl.h>
+***************
+*** 27,32 ****
+  #include "socket.h"
+  #include "flash.h"
+  
+  #if defined(LINUX)
+  #define BUFF_LEN 8192
+  
+--- 29,35 ----
+  #include "socket.h"
+  #include "flash.h"
+  
++ pcap_t *pcap_fp = NULL;
+  #if defined(LINUX)
+  #define BUFF_LEN 8192
+  
+***************
+*** 114,119 ****
+  
+  char *socket_find_iface_by_index(char *iface_number)
+  {
+  #if defined(LINUX)
+  	struct ifinfomsg *ifinfomsg;
+  	struct nlmsghdr *nh;
+--- 117,148 ----
+  
+  char *socket_find_iface_by_index(char *iface_number)
+  {
++ #if defined(OSX)
++ 	pcap_if_t *alldevs = NULL, *d;
++ 	char errbuf[PCAP_ERRBUF_SIZE], *pcap_dev = NULL;
++ 	int i = 0, if_num = 0;
++ 
++ 	if_num = strtol(iface_number, NULL, 10);
++ 
++ 	if (pcap_findalldevs(&alldevs, errbuf) == -1)
++ 		alldevs = NULL;
++ 
++ 	/* Print the list */
++ 	for (d = alldevs; d != NULL; d = d->next) {
++ 		i++;
++ 
++ 		if (if_num == i) {
++ 			pcap_dev = strdup(d->name);
++ 			break;
++ 		}
++ 	}
++ 
++ 	if (alldevs)
++ 		pcap_freealldevs(alldevs);
++ 
++ 	return pcap_dev;
++ 
++ #endif
+  #if defined(LINUX)
+  	struct ifinfomsg *ifinfomsg;
+  	struct nlmsghdr *nh;
+***************
+*** 189,197 ****
+  		pcap_freealldevs(alldevs);
+  out:
+  	return iface;
+- #else
+- #error socket_find_dev_by_index() is not supported on your OS
+- 	return NULL;
+  #endif
+  }
+  
+--- 218,223 ----
+  		pcap_freealldevs(alldevs);
+  out:
+  	return iface;
+  #endif
+  }
+  
+***************
+*** 273,278 ****
+  		pcap_freealldevs(alldevs);
+  out:
+  	return;
+  #else
+  #error socket_print_all_devices() is not supported on your OS
+  #endif
+--- 299,337 ----
+  		pcap_freealldevs(alldevs);
+  out:
+  	return;
++ #elif defined(OSX)
++ 	pcap_if_t *alldevs = NULL, *d;
++ 	char errbuf[PCAP_ERRBUF_SIZE];
++ 	int i = 0;
++ 
++ 	/* Retrieve the device list from the local machine */
++ 	if (pcap_findalldevs(&alldevs, errbuf) == -1) {
++ 		fprintf(stderr, "Error in pcap_findalldevs: %s\n", errbuf);
++ 		return;
++ 	}
++ 
++ 	/* Print the list */
++ 	for(d = alldevs; d != NULL; d = d->next) {
++ 		i++;
++ 		fprintf(stderr, "\n%i: %s\n", i, d->name);
++ 
++ 		if (!d->description) {
++ 			fprintf(stderr, "\t(No description available)\n");
++ 			continue;
++ 		}
++ 
++ 		unsigned char* p = (unsigned char*)d->description;
++ 		unsigned char c = 0;
++ 		fprintf(stderr, "\t(Description: ");
++ 		while (' ' <= *p) {
++ 			if (c != ' ' || c != *p)
++ 				fprintf(stderr, "%c", *p);
++ 			c = *p++;
++ 		}
++ 
++ 		fprintf(stderr, ")\n");
++ 	}
++ 
+  #else
+  #error socket_print_all_devices() is not supported on your OS
+  #endif
+***************
+*** 367,372 ****
+  	}
+  
+  	return 0;
+  #else
+  #error socket_open() is not supported on your OS
+  	return -1;
+--- 426,442 ----
+  	}
+  
+  	return 0;
++ #elif defined(OSX)
++ 	char error[PCAP_ERRBUF_SIZE];
++ 
++ 	/* Open the output adapter */
++ 	pcap_fp = pcap_open_live(iface, 1500, 1, 250, error);
++ 	if (!pcap_fp) {
++ 		fprintf(stderr, "Error opening adapter: %s\n", error);
++ 		return 1;
++ 	}
++ 
++ 	return 0;
+  #else
+  #error socket_open() is not supported on your OS
+  	return -1;
+***************
+*** 425,431 ****
+  
+  out:
+  	return ret;
+- #elif defined(WIN32)
+  	struct pcap_pkthdr hdr;
+  	const unsigned char *tmp_packet;
+  	int ret = -1;
+--- 495,501 ----
+  
+  out:
+  	return ret;
++ #elif defined(OSX)
+  	struct pcap_pkthdr hdr;
+  	const unsigned char *tmp_packet;
+  	int ret = -1;
+***************
+*** 470,476 ****
+  
+  out:
+  	return ret;
+- #elif defined(WIN32)
+  	int ret = -1;
+  
+  	if (!pcap_fp) {
+--- 540,546 ----
+  
+  out:
+  	return ret;
++ #elif defined(OSX)
+  	int ret = -1;
+  
+  	if (!pcap_fp) {
+***************
+*** 525,531 ****
+  	raw_sock = -1;
+  out:
+  	return;
+- #elif defined(WIN32)
+  	if (!pcap_fp) {
+  		fprintf(stderr, "Error closing adapter '%s': pcap socket not initialized yet\n", iface);
+  		goto out;
+--- 595,601 ----
+  	raw_sock = -1;
+  out:
+  	return;
++ #elif defined(OSX)
+  	if (!pcap_fp) {
+  		fprintf(stderr, "Error closing adapter '%s': pcap socket not initialized yet\n", iface);
+  		goto out;

@@ -1,0 +1,213 @@
+# Resources
+
+Official Openwrt openmesh om2p page: http://wiki.openwrt.org/toh/openmesh/om2p
+AP-51 flash utility page for openmesh: http://dev.cloudtrax.com/wiki/om-developer-info
+
+Plugged into the ethernet port closest to the antennae. Not sure if this makes a difference.
+
+
+Using CentOS (as suggested by the openwrt page), I was able to get the openwrt
+binary and the ap51-flash utility to compile.
+
+Install the following packages using yum
+
+  yum -y install minicom lrzsz gawk flex ncurses-devel subversion expect git zlib-devel gcc-c++ gmp gmp-devel unzip wget xz xz-devel patch
+
+1. Download Openwrt trunk:
+
+  svn co svn://svn.openwrt.org/openwrt/trunk openwrt-trunk
+
+  use 29397
+
+
+2. Downlaod AP51 utility trunk:
+
+  svn co http://dev.cloudtrax.com/downloads/svn/ap51-flash/trunk/ ap51-flash
+
+If you want to use this on Mac OSX, we can checkout an earlier version of the ap51-flash utility:
+
+  [from within ap51-flash directory above]
+  svn update -r 252
+  make ap51-flash-osx
+
+Otherwise, we can just do a regular:
+
+  make
+
+3. Update the OpenWrt feeds:
+
+  cd openwrt-trunk ; scripts/feeds update -a
+  scripts/feeds install luci
+  scripts/feeds install batmand
+  scripts/feeds install kmod-batman-adv
+  scripts/feeds install nodogsplash
+
+3.a If you want to install nodogsplash, you will need to either download the
+package onto the router after you've flashed it with OpenWRT or compile it into
+the firmware. If we want to compile it into the firmware (which will result in
+less setup after flashing), then you are going to want to set a default ssh
+password so that you can access the router. Nodogsplash, by default, closes
+telnet port 23, which is usually necessary to set the ssh password.
+
+First, run
+
+  cd openwrt-trunk/package/base-files/files/etc
+
+To generate your hash, run
+
+  openssl passwd -1 -salt ihlrowCw
+
+You can replace 'ihlrowCw' with whatever hash you want. When presented with a
+prompt, type in the root password you want. For the compiled binary provided,
+the root password is 'sodahall'. It might be a good idea to run this command
+twice to make sure you typed in your password correctly. With the same hash,
+you should receive the same output. Once you have your hash, place the whole
+string in the 'shadow' or 'passwd' file in your current directory (whichever
+exists...create both if you're unsure). There should be a line that looks like:
+
+  root:x:0:0:99999:7:::
+
+Replace the 'x' with your hash, so that your line looks like
+
+  root:$1$ihlrowCw$7nOQ8MgELdTPkP/dBT7s3.:0:0:99999:7:::
+
+3.b To get nodogsplash to start on running, we have to trick it into thinking that
+it has all of its functionality (which it won't: IMQ support was removed out of OpenWRT).
+
+Open up the following file 
+
+  openwrt-trunk/staging_dir/target-mips_r2_uClibc-0.9.32/root-ar71xx/etc/init.d/nodogsplash
+
+and comment out the following three lines at the bottom of the 
+file so that the last 6 lines read as:
+
+     # if not using traffic control,
+     # you can comment out the following 3 lines:
+     #do_module_tests "imq" "numdevs=2"
+     #do_module_tests "ipt_IMQ"
+     #do_module_tests "sch_htb"
+ }
+
+Now go back to the openwrt trunk directory.
+
+4. Make the openwrt binaries:
+
+  make menuconfig
+
+Use the following options:
+
+  Target System -> Atheros AR71xx/AT7240/AR913x/AT934x
+  Target Pr0file -> OpenMesh OM2P
+  Base system -> <*> om-watchdog
+  LuCI -> Collections -> <*> luci
+  LuCI -> Server Interfaces -> <*> luci-sgi-uhttpd
+  Network -> Routing and Redirection -> <*> batmand
+  Network -> Captive Portals -> <*> nodogsplash
+  Kernel Modules -> Network Support -> <*> kmod-batman-adv
+
+
+Now save the configuration then run:
+
+  make
+
+5. Flash the router. Plug in the OM2P from the port nearest to its powercord to
+an ethernet port on your computer. Do NOT plug in the OM2P's power. Just the
+ethernet cable. Then run the following:
+
+  ./ap51-flash eth0 path/to/openwrt-ar71xx-generic-om2p-squashfs-factory.bin
+
+obviously, if you're running this on mac, use ./ap51-flash-osx. This should
+take a few minutes, and the output should be something like:
+> ./ap51-flash-osx en0 ../binaries/openwrt-ar71xx-generic-om2p-squashfs-factory.bin
+
+  [ac:86:74:02:84:a8]: type 'OM2P router' detected
+  [ac:86:74:02:84:a8]: OM2P router: tftp client asks for 'fwupgrade.cfg', serving fwupgrade.cfg portion of: ../binaries/openwrt-ar71xx-generic-om2p-squashfs-factory.bin (1 blocks) ...
+  [ac:86:74:02:84:a8]: OM2P router: tftp client asks for 'kernel', serving kernel portion of: ../binaries/openwrt-ar71xx-generic-om2p-squashfs-factory.bin (1953 blocks) ...
+  [00:26:4a:17:83:f4]: is of type 'redboot' that we have no image for
+  [ac:86:74:02:84:a8]: OM2P router: tftp client asks for 'rootfs', serving rootfs portion of: ../binaries/openwrt-ar71xx-generic-om2p-squashfs-factory.bin (4609 blocks) ...
+  [ac:86:74:02:84:a8]: OM2P router: image successfully transmitted - writing image to flash ...
+  [ac:86:74:02:84:a8]: OM2P router: flash complete. Device ready to unplug.
+
+6. After the router has been flashed, reboot it by unplugging it and plugging it back in. Wait a couple minutes for it to boot up completely, then you should be
+able to log in through ssh, using the password you set above:
+
+  ssh root@192.168.1.1
+
+If it times out, try plugging into the other ethernet port on the router.
+
+7. To start nodogsplash, run the following on the router:
+
+  /etc/init.d/nodogsplash start
+
+7. To configure batman-adv and enable mesh networking, run the following commands
+on the router:
+
+  batctl if add br-lan
+
+Run 
+  
+  batctl if
+
+to make sure this ran correctly.
+
+ifconfig wlan0 mtu 1528
+iwconfig wlan0 mode ad-hoc essid my-mesh-network ap 02:12:34:56:78:9A channel 1
+
+iw wlan0 set type ibss
+iw wlan0 ibss join my-mesh-network 2412
+iw dev wlan0 set peer 02:12:34:56:78:9A
+iw dev wlan0 set channel 1
+batctl if add wlan0
+ifconfig wlan0 up
+ifconfig bat0 up
+
+--- 1 July 2013 ---
+-- uncomment the line in /etc/config/wireless (or network?) to enable the wlan0 interface
+-- then reboot to add the wlan0 interface OR just do /etc/init.d/network restart
+
+batctl if add wlan0
+batctl if
+
+-- the second command should return something
+-- then try 
+
+ifconfig wlan0 mtu 1528
+iw wlan0 set type ibss
+iw wlan0 ibss join my-mesh-network 2412
+iw dev wlan0 set peer 02:12:34:56:78:9A ??? not this one?
+iw dev wlan0 set channel 1
+batctl if add wlan0
+ifconfig wlan0 up
+ifconfig bat0 up
+
+-- if any of these commands error out, try bringing the interface in question *down* and then try it again
+
+-- look at the ap51 source and reduce time?
+
+--- 6 July 2013 ---
+1. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
+   Make sure the router is connected to the internet
+2. run
+    /etc/init.d/network restart
+   We can now verify that 'wlan0' is available to us: run `ifconfig` to see
+3. run
+    ifconfig wlan0 mtu 1528
+    ifconfig wlan0 down
+    batctl if add wlan0
+    iw wlan0 set type ibss
+    iw dev wlan0 set channel 1
+    ifconfig wlan0 up
+    iw wlan0 ibss join mymeshnetwork 2412
+    ifconfig bat0 up
+
+4. Now, if I run '/etc/init.d/network restart', I get
+
+    root@OpenWrt:~# /etc/init.d/network restart
+    brctl: bridge br-lan: Operation not supported
+    brctl: bridge br-lan: File exists
+    brctl: bridge br-lan: Operation not supported
+    Configuration file: /var/run/hostapd-phy0.conf
+    Using interface wlan0 with hwaddr ac:86:74:02:04:32 and ssid 'OpenWrt'
+    root@OpenWrt:~# 
+
+

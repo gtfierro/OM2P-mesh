@@ -1,0 +1,34 @@
+***************
+*** 59,64 ****
+  	PLATFORM = WIN32
+  else ifeq ($(MAKECMDGOALS),$(BINARY_NAME)-osx)
+  	PLATFORM = OSX
+  endif
+  
+  ifneq ($(EMBED_CI)$(EMBED_CE)$(EMBED_UBNT)$(EMBED_UBOOT),)
+--- 59,65 ----
+  	PLATFORM = WIN32
+  else ifeq ($(MAKECMDGOALS),$(BINARY_NAME)-osx)
+  	PLATFORM = OSX
++ 	LDFLAGS += -lpcap
+  endif
+  
+  ifneq ($(EMBED_CI)$(EMBED_CE)$(EMBED_UBNT)$(EMBED_UBOOT),)
+***************
+*** 105,111 ****
+  endif
+  
+  CMDLINE_O = $(AP51_O) commandline.o
+- CFLAGS += -Wall -Werror -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
+  
+  NUM_CPUS = $(shell nproc 2> /dev/null || echo 1)
+  REVISION= $(shell	if [ -d .svn ]; then \
+--- 106,113 ----
+  endif
+  
+  CMDLINE_O = $(AP51_O) commandline.o
++ #CFLAGS += -Wall -Werror -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
++ CFLAGS += -Wall -W -g3 -std=gnu99 -Os -fno-strict-aliasing -D$(PLATFORM)
+  
+  NUM_CPUS = $(shell nproc 2> /dev/null || echo 1)
+  REVISION= $(shell	if [ -d .svn ]; then \
