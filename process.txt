@@ -135,62 +135,32 @@ able to log in through ssh, using the password you set above:
 
 If it times out, try plugging into the other ethernet port on the router.
 
-7. To start nodogsplash, run the following on the router:
+
+7. Nodogsplash expects the IMQ package to be present, but it's not necessary
+for the captive portal feature. To disable nodogsplash checking for IMQ, open
+up /etc/init.d/nodogsplash, and comment out the following three lines at the
+bottom of the file so that the last 6 lines read as:
+
+     # if not using traffic control,
+     # you can comment out the following 3 lines:
+     #do_module_tests "imq" "numdevs=2"
+     #do_module_tests "ipt_IMQ"
+     #do_module_tests "sch_htb"
+ }
+
+8. To start nodogsplash, run the following on the router:
 
   /etc/init.d/nodogsplash start
 
-7. To configure batman-adv and enable mesh networking, run the following commands
-on the router:
 
-  batctl if add br-lan
-
-Run 
-  
-  batctl if
-
-to make sure this ran correctly.
-
-ifconfig wlan0 mtu 1528
-iwconfig wlan0 mode ad-hoc essid my-mesh-network ap 02:12:34:56:78:9A channel 1
-
-iw wlan0 set type ibss
-iw wlan0 ibss join my-mesh-network 2412
-iw dev wlan0 set peer 02:12:34:56:78:9A
-iw dev wlan0 set channel 1
-batctl if add wlan0
-ifconfig wlan0 up
-ifconfig bat0 up
-
---- 1 July 2013 ---
--- uncomment the line in /etc/config/wireless (or network?) to enable the wlan0 interface
--- then reboot to add the wlan0 interface OR just do /etc/init.d/network restart
-
-batctl if add wlan0
-batctl if
-
--- the second command should return something
--- then try 
-
-ifconfig wlan0 mtu 1528
-iw wlan0 set type ibss
-iw wlan0 ibss join my-mesh-network 2412
-iw dev wlan0 set peer 02:12:34:56:78:9A ??? not this one?
-iw dev wlan0 set channel 1
-batctl if add wlan0
-ifconfig wlan0 up
-ifconfig bat0 up
-
--- if any of these commands error out, try bringing the interface in question *down* and then try it again
-
--- look at the ap51 source and reduce time?
-
---- 6 July 2013 ---
-1. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
+9. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
    Make sure the router is connected to the internet
-2. run
+
+10. run
     /etc/init.d/network restart
    We can now verify that 'wlan0' is available to us: run `ifconfig` to see
-3. run
+
+11. run
     ifconfig wlan0 mtu 1528
     ifconfig wlan0 down
     batctl if add wlan0
@@ -200,14 +170,5 @@ ifconfig bat0 up
     iw wlan0 ibss join mymeshnetwork 2412
     ifconfig bat0 up
 
-4. Now, if I run '/etc/init.d/network restart', I get
-
-    root@OpenWrt:~# /etc/init.d/network restart
-    brctl: bridge br-lan: Operation not supported
-    brctl: bridge br-lan: File exists
-    brctl: bridge br-lan: Operation not supported
-    Configuration file: /var/run/hostapd-phy0.conf
-    Using interface wlan0 with hwaddr ac:86:74:02:04:32 and ssid 'OpenWrt'
-    root@OpenWrt:~# 
-
-
+12. Everything should now be running! If you run `batctl o` from one node, you
+should see a couple other nodes listed.
