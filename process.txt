@@ -71,23 +71,6 @@ Replace the 'x' with your hash, so that your line looks like
 
   root:$1$ihlrowCw$7nOQ8MgELdTPkP/dBT7s3.:0:0:99999:7:::
 
-3.b To get nodogsplash to start on running, we have to trick it into thinking that
-it has all of its functionality (which it won't: IMQ support was removed out of OpenWRT).
-
-Open up the following file 
-
-  openwrt-trunk/staging_dir/target-mips_r2_uClibc-0.9.32/root-ar71xx/etc/init.d/nodogsplash
-
-and comment out the following three lines at the bottom of the 
-file so that the last 6 lines read as:
-
-     # if not using traffic control,
-     # you can comment out the following 3 lines:
-     #do_module_tests "imq" "numdevs=2"
-     #do_module_tests "ipt_IMQ"
-     #do_module_tests "sch_htb"
- }
-
 Now go back to the openwrt trunk directory.
 
 4. Make the openwrt binaries:
@@ -152,7 +135,6 @@ bottom of the file so that the last 6 lines read as:
 
   /etc/init.d/nodogsplash start
 
-
 9. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
    Make sure the router is connected to the internet
 
@@ -172,3 +154,90 @@ bottom of the file so that the last 6 lines read as:
 
 12. Everything should now be running! If you run `batctl o` from one node, you
 should see a couple other nodes listed.
+
+
+
+-- setting up wifidog --
+
+You need an Auth Server for wifidog to work. There is an older wifidog auth
+server project, but we're going to be using the newer authpuppy project
+(https://launchpad.net/authpuppy/+download). I'm following
+the instructions here: http://www.authpuppy.org/doc/Getting_Started
+
+Download the tar from the link above, and unbundle it. Move the authpuppy directory
+to /var/www. To set it up quick, run
+    
+    sudo chown -R www-data /var/www/authpuppy
+    sudo mkdir /var/log/apache2/authpuppy
+    sudo chown www-data /var/log/apache2/authpuppy
+
+Make sure you have mod_rewrite enabled on your apache server
+
+    sudo a2enmod rewrite
+    sudo service apache2 restart
+
+Place the following in /etc/apache2/sites-enabled/authpuppy:
+
+    <VirtualHost *:80>
+    ServerAdmin webmaster@localhost
+    ServerName authpuppy.localhost
+    ServerAlias authpuppy.test
+
+    DocumentRoot /var/www/authpuppy/web
+    DirectoryIndex index.php
+    <Directory /var/www/authpuppy/web/>
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride All
+    Order allow,deny
+    allow from all
+    </Directory>
+
+    Alias /sf /var/www/authpuppy/lib/vendor/symfony/data/web/sf
+    <Directory "/var/www/authpuppy/lib/vendor/symfony/data/web/sf">
+    AllowOverride All
+    Allow from All
+    </Directory>
+
+    ErrorLog /var/log/apache2/authpuppy/error.log
+
+    # Possible values include: debug, info, notice, warn, error, crit,
+    # alert, emerg.
+    LogLevel warn
+    CustomLog /var/log/apache2/authpuppy/access.log combined
+    </VirtualHost>
+
+Then you have to create the mysql user. For me, I had trouble doing this. Here's
+a sequence of instructions that worked for me:
+    
+    user@yourserver $> sudo apt-get install php5-mysql
+    user@yourserver $> mysqladmin -uroot -p create authpuppy
+    Enter password:  #Enter the root password
+    user@yourserver $> mysql -uroot -p
+    Enter password: 
+    Welcome to the MySQL monitor.  Commands end with ; or \g.
+    Your MySQL connection id is 45
+    Server version: 5.0.51a-3ubuntu5.5 (Ubuntu)
+
+    Type 'help;' or '\h' for help. Type '\c' to clear the buffer.
+
+    mysql> create user 'authpuppy'@'localhost' identified by 'authpuppydev';
+    Query OK, 0 rows affected (0.21 sec)
+
+    mysql> grant all privileges on authpuppy.* to 'authpuppy'@'localhost' with grant option;
+    Query OK, 0 rows affected (0.02 sec)
+
+You should be able to run
+
+    sudo service apache2 restart
+
+and all will work fine. Make your way to 127.0.0.1 in your web browser and follow the
+instructions. Make a note of the IP address of your auth server
+
+Now, for each of your wifi nodes, edit /etc/wifidog.conf and follow the instructions
+in the file. I got something to SORTA work by just adding
+
+  AuthServer {
+    Hostname IP ADDRESS OF AUTH SERVER
+    SSLAvailable no
+    Path /
+  }
