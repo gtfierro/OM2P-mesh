@@ -40,13 +40,13 @@ Otherwise, we can just do a regular:
   scripts/feeds install luci
   scripts/feeds install batmand
   scripts/feeds install kmod-batman-adv
-  scripts/feeds install nodogsplash
+  scripts/feeds install wifidog
 
-3.a If you want to install nodogsplash, you will need to either download the
+3.a If you want to install wifidog, you will need to either download the
 package onto the router after you've flashed it with OpenWRT or compile it into
 the firmware. If we want to compile it into the firmware (which will result in
 less setup after flashing), then you are going to want to set a default ssh
-password so that you can access the router. Nodogsplash, by default, closes
+password so that you can access the router. Wifidog, by default, might close
 telnet port 23, which is usually necessary to set the ssh password.
 
 First, run
@@ -85,7 +85,7 @@ Use the following options:
   LuCI -> Collections -> <*> luci
   LuCI -> Server Interfaces -> <*> luci-sgi-uhttpd
   Network -> Routing and Redirection -> <*> batmand
-  Network -> Captive Portals -> <*> nodogsplash
+  Network -> Captive Portals -> <*> wifidog
   Kernel Modules -> Network Support -> <*> kmod-batman-adv
 
 
@@ -118,31 +118,14 @@ able to log in through ssh, using the password you set above:
 
 If it times out, try plugging into the other ethernet port on the router.
 
-
-7. Nodogsplash expects the IMQ package to be present, but it's not necessary
-for the captive portal feature. To disable nodogsplash checking for IMQ, open
-up /etc/init.d/nodogsplash, and comment out the following three lines at the
-bottom of the file so that the last 6 lines read as:
-
-     # if not using traffic control,
-     # you can comment out the following 3 lines:
-     #do_module_tests "imq" "numdevs=2"
-     #do_module_tests "ipt_IMQ"
-     #do_module_tests "sch_htb"
- }
-
-8. To start nodogsplash, run the following on the router:
-
-  /etc/init.d/nodogsplash start
-
-9. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
+7. uncomment the line in /etc/config/wireless to enable the wlan0 interface.
    Make sure the router is connected to the internet
 
-10. run
+8. run
     /etc/init.d/network restart
    We can now verify that 'wlan0' is available to us: run `ifconfig` to see
 
-11. run
+9. run
     ifconfig wlan0 mtu 1528
     ifconfig wlan0 down
     batctl if add wlan0
@@ -152,7 +135,7 @@ bottom of the file so that the last 6 lines read as:
     iw wlan0 ibss join mymeshnetwork 2412
     ifconfig bat0 up
 
-12. Everything should now be running! If you run `batctl o` from one node, you
+10. Everything should now be running! If you run `batctl o` from one node, you
 should see a couple other nodes listed.
 
 
@@ -241,3 +224,9 @@ in the file. I got something to SORTA work by just adding
     SSLAvailable no
     Path /
   }
+
+Now, if you run
+
+  wifidog -f -d7
+
+from one of your routers, you should be able to see it working.
