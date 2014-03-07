@@ -123,7 +123,8 @@ If it times out, try plugging into the other ethernet port on the router.
 
 8. run
     /etc/init.d/network restart
-   We can now verify that 'wlan0' is available to us: run `ifconfig` to see
+    wifi up
+ We can now verify that 'wlan0' is available to us: run `ifconfig` to see
 
 9. run
     ifconfig wlan0 mtu 1528
